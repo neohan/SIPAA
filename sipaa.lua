@@ -9,9 +9,14 @@ local dbh_cfg = freeswitch.Dbh("sqlite://C:/Program Files/FreeSWITCH/db/sipaacfg
 
 -- variables
 this_call_is_valid = false
-SipNumber = {server_id = 0, sip_number_id = 0, voice_type = 0, voice_id = 0, transfer_no = "", play_times = 0, timeout_action = 0, default_no = ""}
+SipNumber = {server_id = 0, sip_number_id = 0, voice_type = 0, voice_id = 0, transfer_no = "", play_times = 0, timeout_action = 1, default_no = ""}
 dial_rules = {}
 userdefined_welcome_file = ""
+system_welcome_file = ""
+welcome_file = ""
+system_busy_file = ""
+system_fail_file = ""
+system_timeout_second = 0
 -- variables end
 
 
@@ -61,6 +66,48 @@ local function select_userdefined_welcome_filepath(row)
 	end
 end
 
+local function select_system_welcome_filepath(row)
+	for key, val in pairs(row) do
+		system_welcome_file = val
+	end
+end
+
+local function select_system_fail_filepath(row)
+	for key, val in pairs(row) do
+		system_fail_file = val
+	end
+end
+
+local function select_system_busy_filepath(row)
+	for key, val in pairs(row) do
+		system_busy_file = val
+	end
+end
+
+local function select_system_filepath(row)
+	local fieldname
+	for key, val in pairs(row) do
+		if ( key == "OptionText" ) then
+			fieldname = val
+		end
+		if ( key == "OptionValue" ) then
+			if ( fieldname == "DEFAULT_HELLO" ) then
+				system_welcome_file = val
+			elseif ( fieldname == "DEFAULT_BUSY" ) then
+				system_busy_file = val
+			elseif ( fieldname == "DEFAULT_FAIL" ) then
+				system_fail_file = val
+			end
+		end
+	end
+end
+
+local function select_system_timeout_second(row)
+	for key, val in pairs(row) do
+		system_timeout_second = val
+	end
+end
+
 local function this_incomming_call_is_valid(ip, sipno)
 	local sql_query = string.format("SELECT SipServerInfo.ID, SipNumber.ID AS SipNumberID, SipNumber.VoiceType, SipNumber.VoiceID, SipNumber.TransferNo, SipNumber.PlayTimes, SipNumber.TimeoutAction, SipNumber.DefaultNo from SipServerInfo, SipNumber WHERE SipServerInfo.ID = SipNumber.ServerID AND SipServerInfo.ServerIP = \'%s\' AND SipNumber.SipNo = \'%s\' AND SipNumber.Enabled = 1", ip, sipno)
 	dbh_cfg:query(sql_query, select_sipnumber)
@@ -83,6 +130,30 @@ local function get_userdefined_welcome_file(sipno)
 	freeswitch.consoleLog("INFO", "SipNumber:" .. sipno .. ",  user defined welcome file:" .. userdefined_welcome_file .. "\n")
 end
 
+local function get_system_welcome_file()
+	local sql_query = string.format("SELECT OptionValue from SysOptions WHERE OptionText = \'DEFAULT_HELLO\'")
+	dbh_cfg:query(sql_query, select_system_welcome_filepath)
+	freeswitch.consoleLog("INFO", "System welcome file:" .. system_welcome_file .. "\n")
+end
+
+local function get_system_busy_file()
+	local sql_query = string.format("SELECT OptionValue from SysOptions WHERE OptionText = \'DEFAULT_BUSY\'")
+	dbh_cfg:query(sql_query, select_system_busy_filepath)
+	freeswitch.consoleLog("INFO", "System busy file:" .. system_busy_file .. "\n")
+end
+
+local function get_system_files()
+	local sql_query = string.format("SELECT OptionText, OptionValue from SysOptions WHERE OptionText = \'DEFAULT_FAIL\' or OptionText = \'DEFAULT_BUSY\' or OptionText = \'DEFAULT_HELLO\'")
+	dbh_cfg:query(sql_query, select_system_filepath)
+	freeswitch.consoleLog("INFO", "System welcome file:" .. system_welcome_file .. ".  fail file:" .. system_fail_file .. ".  busy file:" .. system_busy_file .. "\n")
+end
+
+local function get_system_timeout_second()
+	local sql_query = string.format("SELECT OptionValue from SysOptions WHERE OptionText = \'TIMEOUT_SECOND\'")
+	dbh_cfg:query(sql_query, select_system_timeout_second)
+	freeswitch.consoleLog("INFO", "System timeout second:" .. system_timeout_second .. "\n")
+end
+
 if ( this_incomming_call_is_valid(sipsvrip, dnis) == false ) then
 	-- cannot find any records in SipNumber and SipServerInfo table, so hangup the call.
 	freeswitch.consoleLog("INFO", "this incomming call is invalid\n")
@@ -93,6 +164,16 @@ if ( this_incomming_call_is_valid(sipsvrip, dnis) == false ) then
 else
 	get_dialrules_by_sipnumber(dnis)
 end
+
+if ( tonumber(SipNumber.voice_type) == 0 ) then
+	--get_system_welcome_file()
+	get_system_files()
+	welcome_file = system_welcome_file
+else
+	get_userdefined_welcome_file(dnis)
+	welcome_file = userdefined_welcome_file
+end
+get_system_timeout_second()
 
 
 session:answer()
@@ -128,11 +209,21 @@ function collect_digits_cb(session, type, data, arg)
 	return "true"
 end
 
+function myHangupHook(s, status, arg)
+    	freeswitch.consoleLog("NOTICE", "myHangupHook: " .. status .. "\n")
+	return "exit"
+end
+blah="w00t"
+session:setHangupHook("myHangupHook", "blah")
+
 while ( true ) do
+	if ( not session:ready() ) then
+		return
+	end
 	session:setInputCallback("collect_digits_cb", "")
 	times = 0
 	changed_to_phoneno = ""
-	while ( times < 3 ) do
+	while ( times < tonumber(SipNumber.play_times) ) do
 		user_entered_digits = ""
 		start_or_user_enter_time = os.time()
 
@@ -143,9 +234,12 @@ while ( true ) do
 			api:executeString(callstring)
 		end
 
-		session:streamFile("gbestsmbl/gbestsmbl-enter_notifyed_phoneno.wav")
+		session:streamFile(welcome_file)
+		if ( mute_flag == false ) then
+			start_or_user_enter_time = os.time()
+		end
 		freeswitch.consoleLog("INFO", "Got " .. user_entered_digits .. "\n")
-		while ( ( string.len(user_entered_digits) == 0 and os.difftime(os.time(), start_or_user_enter_time) < 10 ) or ( string.len(user_entered_digits) > 0 and os.difftime(os.time(), start_or_user_enter_time) < 5 ) ) do
+		while ( ( string.len(user_entered_digits) == 0 and os.difftime(os.time(), start_or_user_enter_time) < tonumber(system_timeout_second) ) or ( string.len(user_entered_digits) > 0 and os.difftime(os.time(), start_or_user_enter_time) < 5 ) ) do
 			if ( string.len(changed_to_phoneno) > 0 ) then
 				break
 			end
@@ -156,28 +250,43 @@ while ( true ) do
 		end
 		times = times + 1
 	end
-	if ( times >= 3 ) then
+	if ( times >= tonumber(SipNumber.play_times) ) then
 		if ( mute_flag == true ) then
 			api = freeswitch.API();
 			local callstring = "bgapi uuid_audio "..objectuuid.." stop"
 			freeswitch.consoleLog("notice", callstring.."\n")
 			api:executeString(callstring)
+			if ( tonumber(SipNumber.timeout_action) == 1 ) then
+				session:streamFile("gbestsmbl/gbestsmbl-bye.wav")
+				session:streamFile("gbestsmbl/gbestsmbl-enter_idnumber_welcome.wav")
+				session:hangup()
+				return
+			else
+				changed_to_phoneno = SipNumber.default_no
+			end
+		else
+			if ( tonumber(SipNumber.timeout_action) == 1 ) then
+				session:streamFile("gbestsmbl/gbestsmbl-bye.wav")
+				session:streamFile("gbestsmbl/gbestsmbl-enter_idnumber_welcome.wav")
+				session:hangup()
+				return
+			else
+				changed_to_phoneno = SipNumber.transfer_no
+			end
 		end
-		session:streamFile("gbestsmbl/gbestsmbl-bye.wav")
-		session:streamFile("gbestsmbl/gbestsmbl-enter_idnumber_welcome.wav")
-		session:hangup()
-		return
 	end
 	session:unsetInputCallback()
 
-	changed_to_phoneno = "4001"
+	if ( mute_flag == true ) then
+		api = freeswitch.API();
+		local callstring = "bgapi uuid_audio "..objectuuid.." stop"
+		freeswitch.consoleLog("notice", callstring.."\n")
+		api:executeString(callstring)
+	end
+
+	changed_to_phoneno = "9874001"
 	dialB = "[origination_caller_id_number=" .. ani .. ",execute_on_answer=lua tsimplify.lua " .. objectuuid .. "]sofia/external/" .. changed_to_phoneno .. "@" .. sipsvrip .. ":" .. sipsvrport
 	freeswitch.consoleLog("INFO","new session:" .. dialB .. "\n")
-
-api = freeswitch.API()
-local callstring = "bgapi uuid_hold "..objectuuid
-freeswitch.consoleLog("notice", callstring.."\n")
-api:executeString(callstring)
 	
 	legB = freeswitch.Session(dialB, session)
 	--freeswitch.bridge(session, legB)
@@ -190,10 +299,9 @@ api:executeString(callstring)
 	freeswitch.consoleLog("INFO","new session state:"..state.."    hangup cause:"..obCause.."\n")
 
 	if ( state == "ERROR" and obCause == "USER_BUSY" ) then
-		session:streamFile("gbestsmbl/gbestsmbl-transferib_welcome.wav")
+		session:streamFile(system_busy_file)
 	elseif ( state == "ERROR" and ( obCause == "UNALLOCATED_NUMBER" or obCause == DESTINATION_OUT_OF_ORDER or obCause == FACILITY_REJECTED or obCause == NORMAL_CIRCUIT_CONGESTION or obCause == NETWORK_OUT_OF_ORDER or obCause == NORMAL_TEMPORARY_FAILURE or obCause == SWITCH_CONGESTION or obCause == REQUESTED_CHAN_UNAVAIL or obCause == BEARERCAPABILITY_NOTAVAIL or obCause == FACILITY_NOT_IMPLEMENTED or obCause == SERVICE_NOT_IMPLEMENTED or obCause == RECOVERY_ON_TIMER_EXPIRE ) ) then
-		session:streamFile("gbestsmbl/gbestsmbl-bye.wav")
-		session:streamFile("gbestsmbl/gbestsmbl-transferib_welcome.wav")
+		session:streamFile(system_fail_file)
 	elseif ( legB:ready() ) then
 		return
 	end
