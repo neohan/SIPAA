@@ -264,52 +264,6 @@ function collect_digits_cb(session, type, data, arg)
 	return "true"
 end
 
-function busyfail_collect_digits_cb(session, type, data, arg)
-	if type == "dtmf" then
-		mute_flag = true
-		api = freeswitch.API();
-		local callstring = "bgapi uuid_audio "..objectuuid.." start write mute -4"
-		freeswitch.consoleLog("notice", callstring.."\n");
-		api:executeString(callstring);
-
-		start_or_user_enter_time = os.time()
-	user_entered_digits = user_entered_digits .. data["digit"]
-    freeswitch.consoleLog("INFO", "Key pressed: " .. data["digit"] .. "    " .. user_entered_digits .. "\n")
-	digits_len = string.len(user_entered_digits)
-
-	for i,n in ipairs(dial_rules) do
-		if ( n.key == user_entered_digits ) then
-			changed_to_phoneno = n.value
-			freeswitch.consoleLog("INFO", "found a math for user entered key:" .. user_entered_digits .. ".   key:" .. n.key .. ",  transfer no:" .. n.value .. "\n")
-			return "break"
-		elseif ( string.len(n.key) == string.len(user_entered_digits) ) then
-			changed_key = n.key
-			firstx, firsty = string.find(n.key, "X")
-			lastx, lasty = string.find(n.key, "X", -1)
-			if ( firstx ~= nil and lastx ~= nil ) then
-				freeswitch.consoleLog(string.format("count:%d", lastx - firstx + 1))
-				changed_key = string.sub(changed_key, 1, firstx - 1)
-				freeswitch.consoleLog("changed again  changed key:" .. changed_key)
-				for i=1, 3 do
-					changed_key = changed_key .. "%d"
-				end
-				freeswitch.consoleLog("after added %d  changed key:" .. changed_key)
-				m, n = string.find(user_entered_digits, changed_key)
-				if ( m ~= nil ) then
-					matched_len = n - m + 1
-					if ( matched_len == string.len(user_entered_digits) ) then
-						freeswitch.consoleLog(string.format("regex match perfect    m:%d.  n:%d", m, n))
-					else
-						freeswitch.consoleLog(string.format("regex match result    m:%d.  n:%d", m, n))
-					end
-				end
-			end
-		end
-	end
-  end
-	return "true"
-end
-
 function myHangupHook(s, status, arg)
     	freeswitch.consoleLog("NOTICE", "myHangupHook: " .. status .. "\n")
 	return "exit"
