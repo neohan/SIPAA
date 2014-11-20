@@ -9,7 +9,7 @@ local dbh_cfg = freeswitch.Dbh("sqlite://C:/Program Files/FreeSWITCH/db/sipaacfg
 
 -- variables
 this_call_is_valid = false
-SipNumber = {server_id = 0, sip_number_id = 0, voice_type = 0, voice_id = 0, transfer_no = "", play_times = 0, timeout_action = 1, default_no = ""}
+SipNumber = {server_id = 0, sip_number_id = 0, voice_type = 0, voice_id = 0, transfer_no = "", play_times = 0, timeout_action = 1, default_no = "", no_answer_timeout = 40}
 dial_rules = {}
 userdefined_welcome_file = ""
 system_welcome_file = ""
@@ -46,6 +46,8 @@ local function select_sipnumber(row)
 				SipNumber.timeout_action = val
 			elseif ( key == "DefaultNo" ) then
 				SipNumber.default_no = val
+			elseif ( key == "NoAnswerTimeout" ) then
+				SipNumber.no_answer_timeout = val
 			end
 	end
 end
@@ -134,9 +136,9 @@ local function select_system_timeout_second(row)
 end
 
 local function this_incomming_call_is_valid(ip, sipno)
-	local sql_query = string.format("SELECT SipServerInfo.ID, SipNumber.ID AS SipNumberID, SipNumber.VoiceType, SipNumber.VoiceID, SipNumber.TransferNo, SipNumber.PlayTimes, SipNumber.TimeoutAction, SipNumber.DefaultNo from SipServerInfo, SipNumber WHERE SipServerInfo.ID = SipNumber.ServerID AND SipServerInfo.ServerIP = \'%s\' AND SipNumber.SipNo = \'%s\' AND SipNumber.Enabled = 1", ip, sipno)
+	local sql_query = string.format("SELECT SipServerInfo.ID, SipNumber.ID AS SipNumberID, SipNumber.VoiceType, SipNumber.VoiceID, SipNumber.TransferNo, SipNumber.PlayTimes, SipNumber.TimeoutAction, SipNumber.DefaultNo, SipNumber.NoAnswerTimeout from SipServerInfo, SipNumber WHERE SipServerInfo.ID = SipNumber.ServerID AND SipServerInfo.ServerIP = \'%s\' AND SipNumber.SipNo = \'%s\' AND SipNumber.Enabled = 1", ip, sipno)
 	dbh_cfg:query(sql_query, select_sipnumber)
-	local logstr = string.format("ID:%d,  SipNumberID:%d,  VoiceType:%d,  VoiceID:%d,  TransferNo:%s,  PlayTimes:%d,  TimeoutAction:%d,  DefaultNo:%s", SipNumber.server_id, SipNumber.sip_number_id, SipNumber.voice_type, SipNumber.voice_id, SipNumber.transfer_no, SipNumber.play_times, SipNumber.timeout_action, SipNumber.default_no)
+	local logstr = string.format("ID:%d,  SipNumberID:%d,  VoiceType:%d,  VoiceID:%d,  TransferNo:%s,  PlayTimes:%d,  TimeoutAction:%d,  DefaultNo:%s,  NoAnswerTimeout:%d", SipNumber.server_id, SipNumber.sip_number_id, SipNumber.voice_type, SipNumber.voice_id, SipNumber.transfer_no, SipNumber.play_times, SipNumber.timeout_action, SipNumber.default_no, SipNumber.no_answer_timeout)
 	freeswitch.consoleLog("INFO", logstr.."\n")
 	return this_call_is_valid
 end
@@ -340,6 +342,7 @@ while ( true ) do
 	end
 
 	changed_to_phoneno = "4001"
+	session:setVariable("call_timeout", string.format("%d", SipNumber.no_answer_timeout))
 	dialB = "[origination_caller_id_number=" .. ani .. ",execute_on_answer=lua tsimplify.lua " .. objectuuid .. "]sofia/external/" .. changed_to_phoneno .. "@" .. sipsvrip .. ":" .. sipsvrport
 	freeswitch.consoleLog("INFO","new session:" .. dialB .. "\n")
 	
@@ -353,7 +356,7 @@ while ( true ) do
 	obCause=legB:hangupCause()
 	freeswitch.consoleLog("INFO","new session state:"..state.."    hangup cause:"..obCause.."\n")
 
-	if ( state == "ERROR" and obCause == "USER_BUSY" ) then
+	if ( state == "ERROR" and ( obCause == "USER_BUSY" or obCause == "NO_ANSWER" ) ) then
 		repeat_digits = session:playAndGetDigits(1, 1, tonumber(system_busy_times), tonumber(system_timeout_second) * 1000, "", system_busy_file, "", "[*]")
 		if ( repeat_digits == "" or repeat_digits ~= "*" ) then
 			session:hangup()
