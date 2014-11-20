@@ -96,16 +96,22 @@ end
 
 
 session:answer()
-session:execute("playback", "gbestsmbl/gbestsmbl-bye.wav;loops=2")
 
 repeat_times = 0
 objectuuid = session:get_uuid()
 user_entered_digits = ""
 start_or_user_enter_time = os.time()
 changed_to_phoneno = ""
+mute_flag = false
 
 function collect_digits_cb(session, type, data, arg)
 	if type == "dtmf" then
+		mute_flag = true
+		api = freeswitch.API();
+		local callstring = "bgapi uuid_audio "..objectuuid.." start write mute -4"
+		freeswitch.consoleLog("notice", callstring.."\n");
+		api:executeString(callstring);
+
 		start_or_user_enter_time = os.time()
 	user_entered_digits = user_entered_digits .. data["digit"]
     freeswitch.consoleLog("INFO", "Key pressed: " .. data["digit"] .. "    " .. user_entered_digits .. "\n")
@@ -129,6 +135,14 @@ while ( true ) do
 	while ( times < 3 ) do
 		user_entered_digits = ""
 		start_or_user_enter_time = os.time()
+
+		if ( mute_flag == true ) then
+			api = freeswitch.API();
+			local callstring = "bgapi uuid_audio "..objectuuid.." stop"
+			freeswitch.consoleLog("notice", callstring.."\n")
+			api:executeString(callstring)
+		end
+
 		session:streamFile("gbestsmbl/gbestsmbl-enter_notifyed_phoneno.wav")
 		freeswitch.consoleLog("INFO", "Got " .. user_entered_digits .. "\n")
 		while ( ( string.len(user_entered_digits) == 0 and os.difftime(os.time(), start_or_user_enter_time) < 10 ) or ( string.len(user_entered_digits) > 0 and os.difftime(os.time(), start_or_user_enter_time) < 5 ) ) do
@@ -143,6 +157,12 @@ while ( true ) do
 		times = times + 1
 	end
 	if ( times >= 3 ) then
+		if ( mute_flag == true ) then
+			api = freeswitch.API();
+			local callstring = "bgapi uuid_audio "..objectuuid.." stop"
+			freeswitch.consoleLog("notice", callstring.."\n")
+			api:executeString(callstring)
+		end
 		session:streamFile("gbestsmbl/gbestsmbl-bye.wav")
 		session:streamFile("gbestsmbl/gbestsmbl-enter_idnumber_welcome.wav")
 		session:hangup()
