@@ -85,9 +85,20 @@ local function select_system_busy_filepath(row)
 end
 
 local function select_system_filepath(row)
-	local fieldname
+	local fieldname = ""
+	local option_val = ""
 	for key, val in pairs(row) do
-		if ( key == "OptionText" ) then
+		freeswitch.consoleLog("INFO", "key:" .. key .. ".  val:" .. val .. ".    option_val" .. option_val .. ".  fieldname:" .. fieldname .. "\n")
+		if ( key == "OptionText" and not (option_val == "")) then
+			if ( val == "DEFAULT_HELLO" ) then
+				system_welcome_file = option_val
+			elseif ( val == "DEFAULT_BUSY" ) then
+				system_busy_file = option_val
+			elseif ( val == "DEFAULT_FAIL" ) then
+				system_fail_file = option_val
+			end
+			option_val = ""
+		elseif ( key == "OptionText" ) then
 			fieldname = val
 		end
 		if ( key == "OptionValue" ) then
@@ -97,6 +108,8 @@ local function select_system_filepath(row)
 				system_busy_file = val
 			elseif ( fieldname == "DEFAULT_FAIL" ) then
 				system_fail_file = val
+			elseif ( fieldname == "" ) then
+				option_val = val
 			end
 		end
 	end
@@ -131,15 +144,9 @@ local function get_userdefined_welcome_file(sipno)
 end
 
 local function get_system_welcome_file()
-	local sql_query = string.format("SELECT OptionValue from SysOptions WHERE OptionText = \'DEFAULT_HELLO\'")
-	dbh_cfg:query(sql_query, select_system_welcome_filepath)
+	local sql_query = string.format("SELECT OptionText, OptionValue from OptionText = \'DEFAULT_HELLO\'")
+	dbh_cfg:query(sql_query, select_system_filepath)
 	freeswitch.consoleLog("INFO", "System welcome file:" .. system_welcome_file .. "\n")
-end
-
-local function get_system_busy_file()
-	local sql_query = string.format("SELECT OptionValue from SysOptions WHERE OptionText = \'DEFAULT_BUSY\'")
-	dbh_cfg:query(sql_query, select_system_busy_filepath)
-	freeswitch.consoleLog("INFO", "System busy file:" .. system_busy_file .. "\n")
 end
 
 local function get_system_files()
@@ -166,8 +173,14 @@ else
 end
 
 if ( tonumber(SipNumber.voice_type) == 0 ) then
-	--get_system_welcome_file()
 	get_system_files()
+	if ( system_welcome_file == "" ) then
+		if ( dbh_cfg:connected() == false ) then
+			freeswitch.consoleLog("INFO", "dbh_cfg is not connected.")
+		end
+		session:sleep(100)
+		get_system_files()
+	end
 	welcome_file = system_welcome_file
 else
 	get_userdefined_welcome_file(dnis)
@@ -284,7 +297,7 @@ while ( true ) do
 		api:executeString(callstring)
 	end
 
-	changed_to_phoneno = "9874001"
+	changed_to_phoneno = "4001"
 	dialB = "[origination_caller_id_number=" .. ani .. ",execute_on_answer=lua tsimplify.lua " .. objectuuid .. "]sofia/external/" .. changed_to_phoneno .. "@" .. sipsvrip .. ":" .. sipsvrport
 	freeswitch.consoleLog("INFO","new session:" .. dialB .. "\n")
 	
