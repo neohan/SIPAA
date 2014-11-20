@@ -17,6 +17,10 @@ welcome_file = ""
 system_busy_file = ""
 system_fail_file = ""
 system_timeout_second = 0
+system_busy_times_str = ""
+system_fail_times_str = ""
+system_busy_times = 1
+system_fail_times = 1
 -- variables end
 
 
@@ -96,6 +100,10 @@ local function select_system_filepath(row)
 				system_busy_file = option_val
 			elseif ( val == "DEFAULT_FAIL" ) then
 				system_fail_file = option_val
+			elseif ( val == "DEFAULT_FAIL_TIMES" ) then
+				system_fail_times_str = option_val
+			elseif ( val == "DEFAULT_BUSY_TIMES" ) then
+				system_busy_times_str = option_val
 			end
 			option_val = ""
 		elseif ( key == "OptionText" ) then
@@ -108,6 +116,10 @@ local function select_system_filepath(row)
 				system_busy_file = val
 			elseif ( fieldname == "DEFAULT_FAIL" ) then
 				system_fail_file = val
+			elseif ( fieldname == "DEFAULT_BUSY_TIMES" ) then
+				system_busy_times_str = val
+			elseif ( fieldname == "DEFAULT_FAIL_TIMES" ) then
+				system_fail_times_str = val
 			elseif ( fieldname == "" ) then
 				option_val = val
 			end
@@ -150,7 +162,7 @@ local function get_system_welcome_file()
 end
 
 local function get_system_files()
-	local sql_query = string.format("SELECT OptionText, OptionValue from SysOptions WHERE OptionText = \'DEFAULT_FAIL\' or OptionText = \'DEFAULT_BUSY\' or OptionText = \'DEFAULT_HELLO\'")
+	local sql_query = string.format("SELECT OptionText, OptionValue from SysOptions WHERE OptionText = \'DEFAULT_FAIL\' or OptionText = \'DEFAULT_BUSY\' or OptionText = \'DEFAULT_HELLO\' or OptionText = \'DEFAULT_BUSY_TIMES\' or OptionText = \'DEFAULT_FAIL_TIMES\'")
 	dbh_cfg:query(sql_query, select_system_filepath)
 	freeswitch.consoleLog("INFO", "System welcome file:" .. system_welcome_file .. ".  fail file:" .. system_fail_file .. ".  busy file:" .. system_busy_file .. "\n")
 end
@@ -172,14 +184,22 @@ else
 	get_dialrules_by_sipnumber(dnis)
 end
 
+get_system_files()
+if ( system_fail_times_str == nil or system_fail_times_str == "" ) then
+	system_fail_times_str = "1"
+end
+system_fail_times = tonumber(system_fail_times_str)
+if ( system_busy_times_str == nil or system_busy_times_str == "" ) then
+	system_busy_times_str = "1"
+end
+system_busy_times = tonumber(system_busy_times_str)
+
 if ( tonumber(SipNumber.voice_type) == 0 ) then
-	get_system_files()
 	if ( system_welcome_file == "" ) then
 		if ( dbh_cfg:connected() == false ) then
 			freeswitch.consoleLog("INFO", "dbh_cfg is not connected.")
 		end
 		session:sleep(100)
-		get_system_files()
 	end
 	welcome_file = system_welcome_file
 else
@@ -216,6 +236,74 @@ function collect_digits_cb(session, type, data, arg)
 			changed_to_phoneno = n.value
 			freeswitch.consoleLog("INFO", "found a math for user entered key:" .. user_entered_digits .. ".   key:" .. n.key .. ",  transfer no:" .. n.value .. "\n")
 			return "break"
+		elseif ( string.len(n.key) == string.len(user_entered_digits) ) then
+			changed_key = n.key
+			firstx, firsty = string.find(n.key, "X")
+			lastx, lasty = string.find(n.key, "X", -1)
+			if ( firstx ~= nil and lastx ~= nil ) then
+				freeswitch.consoleLog(string.format("count:%d", lastx - firstx + 1))
+				changed_key = string.sub(changed_key, 1, firstx - 1)
+				freeswitch.consoleLog("changed again  changed key:" .. changed_key)
+				for i=1, 3 do
+					changed_key = changed_key .. "%d"
+				end
+				freeswitch.consoleLog("after added %d  changed key:" .. changed_key)
+				m, n = string.find(user_entered_digits, changed_key)
+				if ( m ~= nil ) then
+					matched_len = n - m + 1
+					if ( matched_len == string.len(user_entered_digits) ) then
+						freeswitch.consoleLog(string.format("regex match perfect    m:%d.  n:%d", m, n))
+					else
+						freeswitch.consoleLog(string.format("regex match result    m:%d.  n:%d", m, n))
+					end
+				end
+			end
+		end
+	end
+  end
+	return "true"
+end
+
+function busyfail_collect_digits_cb(session, type, data, arg)
+	if type == "dtmf" then
+		mute_flag = true
+		api = freeswitch.API();
+		local callstring = "bgapi uuid_audio "..objectuuid.." start write mute -4"
+		freeswitch.consoleLog("notice", callstring.."\n");
+		api:executeString(callstring);
+
+		start_or_user_enter_time = os.time()
+	user_entered_digits = user_entered_digits .. data["digit"]
+    freeswitch.consoleLog("INFO", "Key pressed: " .. data["digit"] .. "    " .. user_entered_digits .. "\n")
+	digits_len = string.len(user_entered_digits)
+
+	for i,n in ipairs(dial_rules) do
+		if ( n.key == user_entered_digits ) then
+			changed_to_phoneno = n.value
+			freeswitch.consoleLog("INFO", "found a math for user entered key:" .. user_entered_digits .. ".   key:" .. n.key .. ",  transfer no:" .. n.value .. "\n")
+			return "break"
+		elseif ( string.len(n.key) == string.len(user_entered_digits) ) then
+			changed_key = n.key
+			firstx, firsty = string.find(n.key, "X")
+			lastx, lasty = string.find(n.key, "X", -1)
+			if ( firstx ~= nil and lastx ~= nil ) then
+				freeswitch.consoleLog(string.format("count:%d", lastx - firstx + 1))
+				changed_key = string.sub(changed_key, 1, firstx - 1)
+				freeswitch.consoleLog("changed again  changed key:" .. changed_key)
+				for i=1, 3 do
+					changed_key = changed_key .. "%d"
+				end
+				freeswitch.consoleLog("after added %d  changed key:" .. changed_key)
+				m, n = string.find(user_entered_digits, changed_key)
+				if ( m ~= nil ) then
+					matched_len = n - m + 1
+					if ( matched_len == string.len(user_entered_digits) ) then
+						freeswitch.consoleLog(string.format("regex match perfect    m:%d.  n:%d", m, n))
+					else
+						freeswitch.consoleLog(string.format("regex match result    m:%d.  n:%d", m, n))
+					end
+				end
+			end
 		end
 	end
   end
@@ -312,9 +400,17 @@ while ( true ) do
 	freeswitch.consoleLog("INFO","new session state:"..state.."    hangup cause:"..obCause.."\n")
 
 	if ( state == "ERROR" and obCause == "USER_BUSY" ) then
-		session:streamFile(system_busy_file)
+		repeat_digits = session:playAndGetDigits(1, 1, tonumber(system_busy_times), tonumber(system_timeout_second) * 1000, "", system_busy_file, "", "[*]")
+		if ( repeat_digits == "" or repeat_digits ~= "*" ) then
+			session:hangup()
+			return
+		end
 	elseif ( state == "ERROR" and ( obCause == "UNALLOCATED_NUMBER" or obCause == DESTINATION_OUT_OF_ORDER or obCause == FACILITY_REJECTED or obCause == NORMAL_CIRCUIT_CONGESTION or obCause == NETWORK_OUT_OF_ORDER or obCause == NORMAL_TEMPORARY_FAILURE or obCause == SWITCH_CONGESTION or obCause == REQUESTED_CHAN_UNAVAIL or obCause == BEARERCAPABILITY_NOTAVAIL or obCause == FACILITY_NOT_IMPLEMENTED or obCause == SERVICE_NOT_IMPLEMENTED or obCause == RECOVERY_ON_TIMER_EXPIRE ) ) then
-		session:streamFile(system_fail_file)
+		repeat_digits = session:playAndGetDigits(1, 1, tonumber(system_fail_times), tonumber(system_timeout_second) * 1000, "", system_fail_file, "", "[*]")
+		if ( repeat_digits == "" or repeat_digits ~= "*" ) then
+			session:hangup()
+			return
+		end
 	elseif ( legB:ready() ) then
 		return
 	end
