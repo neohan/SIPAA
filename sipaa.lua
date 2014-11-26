@@ -1,11 +1,13 @@
+dbdir = freeswitch.getGlobalVariable("db_dir")
 sipsvrip=session:getVariable("network_addr")
 sipsvrport=session:getVariable("sip_network_port")
 ani = session:getVariable("caller_id_number")
 dnis = session:getVariable("destination_number")
+objectuuid = session:get_uuid()
 
 
-local dbh_cfg = freeswitch.Dbh("sqlite://C:/Program Files/FreeSWITCH/db/sipaacfg.db")
---local dbh_recs = freeswitch.Dbh("core:sipaarecs")
+local dbh_cfg = freeswitch.Dbh("sqlite://"..dbdir.."/sipaacfg.db")
+local dbh_recs = freeswitch.Dbh("sqlite://"..dbdir.."/sipaarecs.db")
 
 -- variables
 this_call_is_valid = false
@@ -21,6 +23,8 @@ system_busy_times_str = ""
 system_fail_times_str = ""
 system_busy_times = 1
 system_fail_times = 1
+
+transfer_record = {start_time_str = "", start_date_str = "", start_hhmmss_str = "", end_time_str = "", ani = "", uuid = "", sipip = "", sipno = "", flag = 0 }
 -- variables end
 
 
@@ -69,24 +73,6 @@ end
 local function select_userdefined_welcome_filepath(row)
 	for key, val in pairs(row) do
 		userdefined_welcome_file = val
-	end
-end
-
-local function select_system_welcome_filepath(row)
-	for key, val in pairs(row) do
-		system_welcome_file = val
-	end
-end
-
-local function select_system_fail_filepath(row)
-	for key, val in pairs(row) do
-		system_fail_file = val
-	end
-end
-
-local function select_system_busy_filepath(row)
-	for key, val in pairs(row) do
-		system_busy_file = val
 	end
 end
 
@@ -154,6 +140,7 @@ end
 local function get_userdefined_welcome_file(sipno)
 	local sql_query = string.format("SELECT VoicePath from SipNumber, SysVoice WHERE SipNumber.VoiceID = SysVoice.ID AND SipNumber.SipNo = \'%s\'", sipno)
 	dbh_cfg:query(sql_query, select_userdefined_welcome_filepath)
+	userdefined_welcome_file = "sipaapangling\\" .. userdefined_welcome_file
 	freeswitch.consoleLog("INFO", "SipNumber:" .. sipno .. ",  user defined welcome file:" .. userdefined_welcome_file .. "\n")
 end
 
@@ -166,6 +153,9 @@ end
 local function get_system_files()
 	local sql_query = string.format("SELECT OptionText, OptionValue from SysOptions WHERE OptionText = \'DEFAULT_FAIL\' or OptionText = \'DEFAULT_BUSY\' or OptionText = \'DEFAULT_HELLO\' or OptionText = \'DEFAULT_BUSY_TIMES\' or OptionText = \'DEFAULT_FAIL_TIMES\'")
 	dbh_cfg:query(sql_query, select_system_filepath)
+	system_welcome_file = "sipaapangling\\" .. system_welcome_file
+	system_fail_file = "sipaapangling\\" .. system_fail_file
+	system_busy_file = "sipaapangling\\" .. system_busy_file
 	freeswitch.consoleLog("INFO", "System welcome file:" .. system_welcome_file .. ".  fail file:" .. system_fail_file .. ".  busy file:" .. system_busy_file .. "\n")
 end
 
@@ -175,11 +165,30 @@ local function get_system_timeout_second()
 	freeswitch.consoleLog("INFO", "System timeout second:" .. system_timeout_second .. "\n")
 end
 
+local function record_call(flag)
+	transfer_record.flag = tonumber(flag)
+	endtimetable = os.date("*t", os.time())
+	transfer_record.end_time_str = string.format("%d-%d-%d %d:%d:%d", endtimetable.year, endtimetable.month, endtimetable.day, endtimetable.hour, endtimetable.min, endtimetable.sec)
+
+
+sql = string.format("INSERT INTO TransferRecords(StartDatetime, Enddatetime, Ani, UUID, SipIP, SipNo, Flag) VALUES(\'%s\', \'%s\', \'%s\', \'%s\', \'%s\', \'%s\', %d)", transfer_record.start_time_str, transfer_record.end_time_str, transfer_record.ani, transfer_record.uuid, transfer_record.sipip, transfer_record.sipno, tonumber(transfer_record.flag))
+dbh_recs:query(sql)
+freeswitch.consoleLog("INFO", string.format("After insert.  Affected rows:%d.\n%s\n", dbh_recs:affected_rows(), sql))
+end
+
+
+transfer_record.ani = ani
+transfer_record.uuid = objectuuid
+transfer_record.sipip = sipsvrip
+transfer_record.sipno = dnis
+timetable = os.date("*t", os.time())
+transfer_record.start_date_str =string.format("%d-%d-%d", timetable.year, timetable.month, timetable.day)
+transfer_record.start_hhmmss_str = string.format("%d:%d:%d", timetable.hour, timetable.min, timetable.sec)
+transfer_record.start_time_str = string.format("%d-%d-%d %d:%d:%d", timetable.year, timetable.month, timetable.day, timetable.hour, timetable.min, timetable.sec)
+
 if ( this_incomming_call_is_valid(sipsvrip, dnis) == false ) then
 	-- cannot find any records in SipNumber and SipServerInfo table, so hangup the call.
 	freeswitch.consoleLog("INFO", "this incomming call is invalid\n")
-	session:streamFile("gbestsmbl/gbestsmbl-bye.wav")
-	session:streamFile("gbestsmbl/gbestsmbl-enter_callback.wav")
 	session:hangup()
 	return
 else
@@ -214,7 +223,8 @@ get_system_timeout_second()
 session:answer()
 
 repeat_times = 0
-objectuuid = session:get_uuid()
+
+
 user_entered_digits = ""
 start_or_user_enter_time = os.time()
 changed_to_phoneno = ""
@@ -236,6 +246,10 @@ function collect_digits_cb(session, type, data, arg)
 	for i,n in ipairs(dial_rules) do
 		if ( n.key == user_entered_digits ) then
 			changed_to_phoneno = n.value
+			iposx, iposy = string.find(changed_to_phoneno, "I")
+			if ( iposx ~= nil ) then
+				changed_to_phoneno, _ = string.gsub(changed_to_phoneno, "I", user_entered_digits)
+			end
 			freeswitch.consoleLog("INFO", "found a math for user entered key:" .. user_entered_digits .. ".   key:" .. n.key .. ",  transfer no:" .. n.value .. "\n")
 			return "break"
 		elseif ( string.len(n.key) == string.len(user_entered_digits) ) then
@@ -246,7 +260,7 @@ function collect_digits_cb(session, type, data, arg)
 				freeswitch.consoleLog(string.format("count:%d", lastx - firstx + 1))
 				changed_key = string.sub(changed_key, 1, firstx - 1)
 				freeswitch.consoleLog("changed again  changed key:" .. changed_key)
-				for i=1, 3 do
+				for i=1, lastx - firstx + 1 do
 					changed_key = changed_key .. "%d"
 				end
 				freeswitch.consoleLog("after added %d  changed key:" .. changed_key)
@@ -255,6 +269,12 @@ function collect_digits_cb(session, type, data, arg)
 					matched_len = n - m + 1
 					if ( matched_len == string.len(user_entered_digits) ) then
 						freeswitch.consoleLog(string.format("regex match perfect    m:%d.  n:%d", m, n))
+						changed_to_phoneno = n.value
+						iposx, iposy = string.find(changed_to_phoneno, "I")
+						if ( iposx ~= nil ) then
+							changed_to_phoneno, _ = string.gsub(changed_to_phoneno, "I", user_entered_digits)
+						end
+						return "break"
 					else
 						freeswitch.consoleLog(string.format("regex match result    m:%d.  n:%d", m, n))
 					end
@@ -267,6 +287,8 @@ function collect_digits_cb(session, type, data, arg)
 end
 
 function myHangupHook(s, status, arg)
+	record_call(0)
+	freeswitch.consoleLog("INFO", "dbdir:" .. dbdir.."\n")
     	freeswitch.consoleLog("NOTICE", "myHangupHook: " .. status .. "\n")
 	return "exit"
 end
@@ -296,7 +318,7 @@ while ( true ) do
 			start_or_user_enter_time = os.time()
 		end
 		freeswitch.consoleLog("INFO", "Got " .. user_entered_digits .. "\n")
-		while ( ( string.len(user_entered_digits) == 0 and os.difftime(os.time(), start_or_user_enter_time) < tonumber(system_timeout_second) ) or ( string.len(user_entered_digits) > 0 and os.difftime(os.time(), start_or_user_enter_time) < 5 ) ) do
+		while ( ( string.len(user_entered_digits) == 0 and os.difftime(os.time(), start_or_user_enter_time) < tonumber(system_timeout_second) ) or ( string.len(user_entered_digits) > 0 and os.difftime(os.time(), start_or_user_enter_time) < tonumber(system_timeout_second) ) ) do
 			if ( string.len(changed_to_phoneno) > 0 ) then
 				break
 			end
@@ -314,17 +336,19 @@ while ( true ) do
 			freeswitch.consoleLog("notice", callstring.."\n")
 			api:executeString(callstring)
 			if ( tonumber(SipNumber.timeout_action) == 1 ) then
-				session:streamFile("gbestsmbl/gbestsmbl-bye.wav")
-				session:streamFile("gbestsmbl/gbestsmbl-enter_idnumber_welcome.wav")
+				record_call(0)
 				session:hangup()
 				return
 			else
-				changed_to_phoneno = SipNumber.default_no
+				if ( string.len(SipNumber.default_no) > 0 ) then
+					changed_to_phoneno = SipNumber.default_no
+				else
+					changed_to_phoneno = user_entered_digits
+				end
 			end
 		else
 			if ( tonumber(SipNumber.timeout_action) == 1 ) then
-				session:streamFile("gbestsmbl/gbestsmbl-bye.wav")
-				session:streamFile("gbestsmbl/gbestsmbl-enter_idnumber_welcome.wav")
+				record_call(0)
 				session:hangup()
 				return
 			else
@@ -341,9 +365,9 @@ while ( true ) do
 		api:executeString(callstring)
 	end
 
-	changed_to_phoneno = "4001"
+
 	session:setVariable("call_timeout", string.format("%d", SipNumber.no_answer_timeout))
-	dialB = "[origination_caller_id_number=" .. ani .. ",execute_on_answer=lua tsimplify.lua " .. objectuuid .. "]sofia/external/" .. changed_to_phoneno .. "@" .. sipsvrip .. ":" .. sipsvrport
+	dialB = "[origination_caller_id_number=" .. ani .. ",execute_on_answer=lua tsimplify.lua " .. objectuuid .. " " .. transfer_record.start_date_str .. " " .. transfer_record.start_hhmmss_str .. " " .. transfer_record.ani .. " " .. transfer_record.sipip .. " " .. transfer_record.sipno .. "]sofia/external/" .. changed_to_phoneno .. "@" .. sipsvrip .. ":" .. sipsvrport
 	freeswitch.consoleLog("INFO","new session:" .. dialB .. "\n")
 	
 	legB = freeswitch.Session(dialB, session)
@@ -359,22 +383,18 @@ while ( true ) do
 	if ( state == "ERROR" and ( obCause == "USER_BUSY" or obCause == "NO_ANSWER" ) ) then
 		repeat_digits = session:playAndGetDigits(1, 1, tonumber(system_busy_times), tonumber(system_timeout_second) * 1000, "", system_busy_file, "", "[*]")
 		if ( repeat_digits == "" or repeat_digits ~= "*" ) then
+			record_call(0)
 			session:hangup()
 			return
 		end
 	elseif ( state == "ERROR" and ( obCause == "UNALLOCATED_NUMBER" or obCause == DESTINATION_OUT_OF_ORDER or obCause == FACILITY_REJECTED or obCause == NORMAL_CIRCUIT_CONGESTION or obCause == NETWORK_OUT_OF_ORDER or obCause == NORMAL_TEMPORARY_FAILURE or obCause == SWITCH_CONGESTION or obCause == REQUESTED_CHAN_UNAVAIL or obCause == BEARERCAPABILITY_NOTAVAIL or obCause == FACILITY_NOT_IMPLEMENTED or obCause == SERVICE_NOT_IMPLEMENTED or obCause == RECOVERY_ON_TIMER_EXPIRE ) ) then
 		repeat_digits = session:playAndGetDigits(1, 1, tonumber(system_fail_times), tonumber(system_timeout_second) * 1000, "", system_fail_file, "", "[*]")
 		if ( repeat_digits == "" or repeat_digits ~= "*" ) then
+			record_call(0)
 			session:hangup()
 			return
 		end
 	elseif ( legB:ready() ) then
-		return
-	end
-
-	repeat_times = repeat_times + 1
-	if ( repeat_times >= 3 ) then
-		session:hangup()
 		return
 	end
 end		-- end of while
