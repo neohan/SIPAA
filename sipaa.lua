@@ -39,7 +39,11 @@ local function select_sipnumber(row)
 			elseif ( key == "VoiceType" ) then
 				SipNumber.voice_type = val
 			elseif ( key == "VoiceID" ) then
-				SipNumber.voice_id = val
+				if ( val == "" or val == nil ) then
+					SipNumber.voice_id = 0
+				else
+					SipNumber.voice_id = val
+				end
 				freeswitch.consoleLog("INFO", "voice_id:"..val.."\n")
 			elseif ( key == "TransferNo" ) then
 				SipNumber.transfer_no = val
@@ -168,7 +172,7 @@ end
 local function record_call(flag)
 	transfer_record.flag = tonumber(flag)
 	endtimetable = os.date("*t", os.time())
-	transfer_record.end_time_str = string.format("%d-%d-%d %d:%d:%d", endtimetable.year, endtimetable.month, endtimetable.day, endtimetable.hour, endtimetable.min, endtimetable.sec)
+	transfer_record.end_time_str = string.format("%4d-%2d-%2d %2d:%2d:%2d.000", endtimetable.year, endtimetable.month, endtimetable.day, endtimetable.hour, endtimetable.min, endtimetable.sec)
 
 
 sql = string.format("INSERT INTO TransferRecords(StartDatetime, Enddatetime, Ani, UUID, SipIP, SipNo, Flag) VALUES(\'%s\', \'%s\', \'%s\', \'%s\', \'%s\', \'%s\', %d)", transfer_record.start_time_str, transfer_record.end_time_str, transfer_record.ani, transfer_record.uuid, transfer_record.sipip, transfer_record.sipno, tonumber(transfer_record.flag))
@@ -182,9 +186,9 @@ transfer_record.uuid = objectuuid
 transfer_record.sipip = sipsvrip
 transfer_record.sipno = dnis
 timetable = os.date("*t", os.time())
-transfer_record.start_date_str =string.format("%d-%d-%d", timetable.year, timetable.month, timetable.day)
-transfer_record.start_hhmmss_str = string.format("%d:%d:%d", timetable.hour, timetable.min, timetable.sec)
-transfer_record.start_time_str = string.format("%d-%d-%d %d:%d:%d", timetable.year, timetable.month, timetable.day, timetable.hour, timetable.min, timetable.sec)
+transfer_record.start_date_str =string.format("%4d-%02d-%02d", timetable.year, timetable.month, timetable.day)
+transfer_record.start_hhmmss_str = string.format("%02d:%02d:%02d.000", timetable.hour, timetable.min, timetable.sec)
+transfer_record.start_time_str = string.format("%4d-%02d-%02d %02d:%02d:%02d.000", timetable.year, timetable.month, timetable.day, timetable.hour, timetable.min, timetable.sec)
 
 if ( this_incomming_call_is_valid(sipsvrip, dnis) == false ) then
 	-- cannot find any records in SipNumber and SipServerInfo table, so hangup the call.
@@ -257,18 +261,18 @@ function collect_digits_cb(session, type, data, arg)
 			firstx, firsty = string.find(n.key, "X")
 			lastx, lasty = string.find(n.key, "X", -1)
 			if ( firstx ~= nil and lastx ~= nil ) then
-				freeswitch.consoleLog(string.format("count:%d", lastx - firstx + 1))
+				freeswitch.consoleLog("INFO", string.format("count:%d", lastx - firstx + 1))
 				changed_key = string.sub(changed_key, 1, firstx - 1)
-				freeswitch.consoleLog("changed again  changed key:" .. changed_key)
+				freeswitch.consoleLog("INFO", "changed again  changed key:" .. changed_key)
 				for i=1, lastx - firstx + 1 do
 					changed_key = changed_key .. "%d"
 				end
-				freeswitch.consoleLog("after added %d  changed key:" .. changed_key)
-				m, n = string.find(user_entered_digits, changed_key)
-				if ( m ~= nil ) then
-					matched_len = n - m + 1
+				freeswitch.consoleLog("INFO", "after added %d  changed key:" .. changed_key)
+				mpos, npos = string.find(user_entered_digits, changed_key)
+				if ( mpos ~= nil ) then
+					matched_len = npos - mpos + 1
 					if ( matched_len == string.len(user_entered_digits) ) then
-						freeswitch.consoleLog(string.format("regex match perfect    m:%d.  n:%d", m, n))
+						freeswitch.consoleLog("INFO", string.format("regex match perfect    m:%d.  n:%d", mpos, npos))
 						changed_to_phoneno = n.value
 						iposx, iposy = string.find(changed_to_phoneno, "I")
 						if ( iposx ~= nil ) then
@@ -276,7 +280,7 @@ function collect_digits_cb(session, type, data, arg)
 						end
 						return "break"
 					else
-						freeswitch.consoleLog(string.format("regex match result    m:%d.  n:%d", m, n))
+						freeswitch.consoleLog("INFO", string.format("regex match result    m:%d.  n:%d", mpos, npos))
 					end
 				end
 			end
@@ -365,7 +369,6 @@ while ( true ) do
 		api:executeString(callstring)
 	end
 
-
 	session:setVariable("call_timeout", string.format("%d", SipNumber.no_answer_timeout))
 	dialB = "[origination_caller_id_number=" .. ani .. ",execute_on_answer=lua tsimplify.lua " .. objectuuid .. " " .. transfer_record.start_date_str .. " " .. transfer_record.start_hhmmss_str .. " " .. transfer_record.ani .. " " .. transfer_record.sipip .. " " .. transfer_record.sipno .. "]sofia/external/" .. changed_to_phoneno .. "@" .. sipsvrip .. ":" .. sipsvrport
 	freeswitch.consoleLog("INFO","new session:" .. dialB .. "\n")
@@ -380,14 +383,14 @@ while ( true ) do
 	obCause=legB:hangupCause()
 	freeswitch.consoleLog("INFO","new session state:"..state.."    hangup cause:"..obCause.."\n")
 
-	if ( state == "ERROR" and ( obCause == "USER_BUSY" or obCause == "NO_ANSWER" ) ) then
+	if ( state == "ERROR" and ( obCause == "USER_BUSY" ) ) then
 		repeat_digits = session:playAndGetDigits(1, 1, tonumber(system_busy_times), tonumber(system_timeout_second) * 1000, "", system_busy_file, "", "[*]")
 		if ( repeat_digits == "" or repeat_digits ~= "*" ) then
 			record_call(0)
 			session:hangup()
 			return
 		end
-	elseif ( state == "ERROR" and ( obCause == "UNALLOCATED_NUMBER" or obCause == DESTINATION_OUT_OF_ORDER or obCause == FACILITY_REJECTED or obCause == NORMAL_CIRCUIT_CONGESTION or obCause == NETWORK_OUT_OF_ORDER or obCause == NORMAL_TEMPORARY_FAILURE or obCause == SWITCH_CONGESTION or obCause == REQUESTED_CHAN_UNAVAIL or obCause == BEARERCAPABILITY_NOTAVAIL or obCause == FACILITY_NOT_IMPLEMENTED or obCause == SERVICE_NOT_IMPLEMENTED or obCause == RECOVERY_ON_TIMER_EXPIRE ) ) then
+	elseif ( state == "ERROR" and ( obCause == "NO_ANSWER" or obCause == "UNALLOCATED_NUMBER" or obCause == "DESTINATION_OUT_OF_ORDER" or obCause == "FACILITY_REJECTED" or obCause == "NORMAL_CIRCUIT_CONGESTION" or obCause == "NETWORK_OUT_OF_ORDER" or obCause == "NORMAL_TEMPORARY_FAILURE" or obCause == "SWITCH_CONGESTION" or obCause == "REQUESTED_CHAN_UNAVAIL" or obCause == "BEARERCAPABILITY_NOTAVAIL" or obCause == "FACILITY_NOT_IMPLEMENTED" or obCause == "SERVICE_NOT_IMPLEMENTED" or obCause == "RECOVERY_ON_TIMER_EXPIRE" ) ) then
 		repeat_digits = session:playAndGetDigits(1, 1, tonumber(system_fail_times), tonumber(system_timeout_second) * 1000, "", system_fail_file, "", "[*]")
 		if ( repeat_digits == "" or repeat_digits ~= "*" ) then
 			record_call(0)
