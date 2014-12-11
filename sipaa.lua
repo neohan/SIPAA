@@ -53,7 +53,11 @@ local function select_sipnumber(row)
 			elseif ( key == "TimeoutAction" ) then
 				SipNumber.timeout_action = val
 			elseif ( key == "DefaultNo" ) then
-				SipNumber.default_no = val
+				if ( val == "" or val == nil ) then
+					SipNumber.default_no = ""
+				else
+					SipNumber.default_no = val
+				end
 			elseif ( key == "NoAnswerTimeout" ) then
 				SipNumber.no_answer_timeout = val
 			end
@@ -172,7 +176,7 @@ end
 local function record_call(flag)
 	transfer_record.flag = tonumber(flag)
 	endtimetable = os.date("*t", os.time())
-	transfer_record.end_time_str = string.format("%4d-%2d-%2d %2d:%2d:%2d.000", endtimetable.year, endtimetable.month, endtimetable.day, endtimetable.hour, endtimetable.min, endtimetable.sec)
+	transfer_record.end_time_str = string.format("%4d-%02d-%02d %02d:%02d:%02d.000", endtimetable.year, endtimetable.month, endtimetable.day, endtimetable.hour, endtimetable.min, endtimetable.sec)
 
 
 sql = string.format("INSERT INTO TransferRecords(StartDatetime, Enddatetime, Ani, UUID, SipIP, SipNo, Flag) VALUES(\'%s\', \'%s\', \'%s\', \'%s\', \'%s\', \'%s\', %d)", transfer_record.start_time_str, transfer_record.end_time_str, transfer_record.ani, transfer_record.uuid, transfer_record.sipip, transfer_record.sipno, tonumber(transfer_record.flag))
@@ -330,6 +334,11 @@ while ( true ) do
 		end
 		if ( string.len(changed_to_phoneno) > 0 ) then
 			break
+		else
+			if ( string.len(SipNumber.default_no) = 0 ) then
+				changed_to_phoneno = user_entered_digits
+				break
+			end		
 		end
 		times = times + 1
 	end
@@ -339,16 +348,11 @@ while ( true ) do
 			local callstring = "bgapi uuid_audio "..objectuuid.." stop"
 			freeswitch.consoleLog("notice", callstring.."\n")
 			api:executeString(callstring)
-			if ( tonumber(SipNumber.timeout_action) == 1 ) then
-				record_call(0)
-				session:hangup()
-				return
+
+			if ( string.len(SipNumber.default_no) > 0 ) then
+				changed_to_phoneno = SipNumber.default_no
 			else
-				if ( string.len(SipNumber.default_no) > 0 ) then
-					changed_to_phoneno = SipNumber.default_no
-				else
-					changed_to_phoneno = user_entered_digits
-				end
+				changed_to_phoneno = user_entered_digits
 			end
 		else
 			if ( tonumber(SipNumber.timeout_action) == 1 ) then
