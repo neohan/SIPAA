@@ -138,7 +138,7 @@ local function this_incomming_call_is_valid(ip, sipno)
 end
 
 local function get_dialrules_by_sipnumber(sipno)
-	local sql_query = string.format("SELECT InputNo, RuleString from SipNumber, Dialrules WHERE SipNumber.ID = Dialrules.SipID AND SipNumber.SipNo = \'%s\'", sipno)
+	local sql_query = string.format("SELECT InputNo, RuleString, OrderId from SipNumber, Dialrules WHERE (SipNumber.ID = Dialrules.SipID AND SipNumber.SipNo = \'%s\') ORDER BY OrderId", sipno)
 	dbh_cfg:query(sql_query, select_dialrules)
 	for i,n in ipairs(dial_rules) do
 		freeswitch.consoleLog("INFO", "SipNumber:" .. sipno .. "  key:" .. n.key .. ",    value:" .. n.value .. "\n")
@@ -335,7 +335,7 @@ while ( true ) do
 		if ( string.len(changed_to_phoneno) > 0 ) then
 			break
 		else
-			if ( string.len(SipNumber.default_no) = 0 ) then
+			if ( string.len(SipNumber.default_no) == 0 ) then
 				changed_to_phoneno = user_entered_digits
 				break
 			end		
@@ -394,7 +394,7 @@ while ( true ) do
 			session:hangup()
 			return
 		end
-	elseif ( state == "ERROR" and ( obCause == "NO_ANSWER" or obCause == "UNALLOCATED_NUMBER" or obCause == "DESTINATION_OUT_OF_ORDER" or obCause == "FACILITY_REJECTED" or obCause == "NORMAL_CIRCUIT_CONGESTION" or obCause == "NETWORK_OUT_OF_ORDER" or obCause == "NORMAL_TEMPORARY_FAILURE" or obCause == "SWITCH_CONGESTION" or obCause == "REQUESTED_CHAN_UNAVAIL" or obCause == "BEARERCAPABILITY_NOTAVAIL" or obCause == "FACILITY_NOT_IMPLEMENTED" or obCause == "SERVICE_NOT_IMPLEMENTED" or obCause == "RECOVERY_ON_TIMER_EXPIRE" ) ) then
+	elseif ( state == "ERROR" and ( obCause == "NO_ANSWER" or obCause == "UNALLOCATED_NUMBER" or obCause == "DESTINATION_OUT_OF_ORDER" or obCause == "FACILITY_REJECTED" or obCause == "NORMAL_CIRCUIT_CONGESTION" or obCause == "NETWORK_OUT_OF_ORDER" or obCause == "NORMAL_TEMPORARY_FAILURE" or obCause == "SWITCH_CONGESTION" or obCause == "REQUESTED_CHAN_UNAVAIL" or obCause == "BEARERCAPABILITY_NOTAVAIL" or obCause == "FACILITY_NOT_IMPLEMENTED" or obCause == "SERVICE_NOT_IMPLEMENTED" or obCause == "RECOVERY_ON_TIMER_EXPIRE" or obCause == "INVALID_NUMBER_FORMAT" ) ) then
 		repeat_digits = session:playAndGetDigits(1, 1, tonumber(system_fail_times), tonumber(system_timeout_second) * 1000, "", system_fail_file, "", "[*]")
 		if ( repeat_digits == "" or repeat_digits ~= "*" ) then
 			record_call(0)
