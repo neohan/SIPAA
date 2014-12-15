@@ -216,7 +216,7 @@ system_busy_times = tonumber(system_busy_times_str)
 if ( tonumber(SipNumber.voice_type) == 0 ) then
 	if ( system_welcome_file == "" ) then
 		if ( dbh_cfg:connected() == false ) then
-			freeswitch.consoleLog("INFO", "dbh_cfg is not connected.")
+			freeswitch.consoleLog("INFO", "dbh_cfg is not connected.\n")
 		end
 		session:sleep(100)
 	end
@@ -265,18 +265,18 @@ function collect_digits_cb(session, type, data, arg)
 			firstx, firsty = string.find(n.key, "X")
 			lastx, lasty = string.find(n.key, "X", -1)
 			if ( firstx ~= nil and lastx ~= nil ) then
-				freeswitch.consoleLog("INFO", string.format("count:%d", lastx - firstx + 1))
+				freeswitch.consoleLog("INFO", string.format("count:%d\n", lastx - firstx + 1))
 				changed_key = string.sub(changed_key, 1, firstx - 1)
-				freeswitch.consoleLog("INFO", "changed again  changed key:" .. changed_key)
+				freeswitch.consoleLog("INFO", "changed again  changed key:" .. changed_key .. "\n")
 				for i=1, lastx - firstx + 1 do
 					changed_key = changed_key .. "%d"
 				end
-				freeswitch.consoleLog("INFO", "after added %d  changed key:" .. changed_key)
+				freeswitch.consoleLog("INFO", "after added %d  changed key:" .. changed_key .. "\n")
 				mpos, npos = string.find(user_entered_digits, changed_key)
 				if ( mpos ~= nil ) then
 					matched_len = npos - mpos + 1
 					if ( matched_len == string.len(user_entered_digits) ) then
-						freeswitch.consoleLog("INFO", string.format("regex match perfect    m:%d.  n:%d", mpos, npos))
+						freeswitch.consoleLog("INFO", string.format("regex match perfect    m:%d.  n:%d\n", mpos, npos))
 						changed_to_phoneno = n.value
 						iposx, iposy = string.find(changed_to_phoneno, "I")
 						if ( iposx ~= nil ) then
@@ -284,7 +284,7 @@ function collect_digits_cb(session, type, data, arg)
 						end
 						return "break"
 					else
-						freeswitch.consoleLog("INFO", string.format("regex match result    m:%d.  n:%d", mpos, npos))
+						freeswitch.consoleLog("INFO", string.format("regex match result    m:%d.  n:%d\n", mpos, npos))
 					end
 				end
 			end
@@ -335,7 +335,7 @@ while ( true ) do
 		if ( string.len(changed_to_phoneno) > 0 ) then
 			break
 		else
-			if ( string.len(SipNumber.default_no) == 0 ) then
+			if ( string.len(SipNumber.default_no) == 0 and string.len(user_entered_digits) > 0 ) then
 				changed_to_phoneno = user_entered_digits
 				break
 			end		
