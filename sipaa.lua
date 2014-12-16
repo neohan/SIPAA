@@ -402,6 +402,10 @@ while ( true ) do
 			return
 		end
 	elseif ( legB:ready() ) then
+		originate_end_time = os.time()
+		while ( os.difftime(os.time(), originate_end_time) < tonumber(30) ) do
+			session:sleep(500)
+		end
 		return
 	end
 end		-- end of while
